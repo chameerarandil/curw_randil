@@ -20,10 +20,10 @@ def send_email(msg, recipient_list=RECIPIENT_LIST):
         # setup the parameters of the message
         email_message['From'] = EMAIL_SERVER_CONFIG['user-name']
         email_message['To'] = ", ".join(recipient_list)
-        email_message['Subject'] = "CUrW Weather Station inconsistency Alert"
+        email_message['Subject'] = "CUrW Rainfall Alert"
         print(email_message['Subject'])
         # add in the message body
-        email_message.attach(MIMEText(msg, 'plain'))
+        email_message.attach(MIMEText(msg))
 
         # send the message via the server set up earlier.
         smtp_server.send_message(email_message)

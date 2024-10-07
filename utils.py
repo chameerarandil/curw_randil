@@ -7,6 +7,7 @@ import traceback
 import pytz
 from datetime import datetime
 from datetime import timedelta
+import numpy as np
 
 from config_cred import DATABASE_CONFIG
 from config_cred import EMAIL_ALERT_TEMPLATE_1, EMAIL_ALERT_TEMPLATE_2
@@ -31,11 +32,36 @@ def utc_to_sl(utc_dt):
 
 def get_leecom_precipitation():
 
-    sql = "SELECT station, end_date FROM curw_iot.run_view where (name like 'Leecom' and variable='Precipitation')"
+    sql = "SELECT station, end_date FROM curw_obs.run where (variable='10')"
     cursor.execute(sql, )
     check_result = cursor.fetchall()
     # print(check_result)
     return check_result
+
+def downloaddata(cursordb,strtime,endtime):
+    cursordb.callproc('get24hrCumRf',(str(strtime),str(endtime)))
+    #print(stid)
+    #print(mycursor)
+
+    if mycursor.rowcount==0:
+        print("No data returned")
+    else:
+        rows = []
+        rawfetch=mycursor.fetchall()
+        for row in mycursor.stored_results():
+        #print(row.fetchall())
+            
+            rows.append(row.fetchall())
+            #print(type(rows))
+            rows = np.array(rows)
+            rows=np.vstack(rows)
+            
+            if not rows.any():
+                print("No data returned")
+                df=[]
+            else:
+                df=rows
+    return df
 
 
 if __name__ == "__main__":
@@ -44,7 +70,12 @@ if __name__ == "__main__":
     mydb = mysql.connector.connect(host=MYSQL_HOST, database=MYSQL_DB, user=MYSQL_USER, passwd=MYSQL_PASSWORD)
 
     #now_date_obj = datetime.now()
-    now_date_obj = utc_to_sl(datetime.now()).replace(tzinfo=None)
+    now_date_obj = datetime.now(pytz.timezone('Asia/Colombo'))
+    todayst=now_date_obj.strftime('%Y-%m-%d %H:%M:%S')
+    print(todayst)
+    day1bfr=now_date_obj-timedelta(days=1)
+    day1bfrst=day1bfr.strftime('%Y-%m-%d %H:%M:%S')
+    print(day1bfrst)
 
     print(now_date_obj)
     #datetime.strptime(start_datetime_tally, '%Y, %m, %d, %H')
@@ -56,120 +87,42 @@ if __name__ == "__main__":
         stationname = []
         variables = []
 
-        cursor = mydb.cursor()
+        mycursor = mydb.cursor()
 
         #cursor = mydb.cursor()
         # print(datetime.now())
 
         #check if the reported end date is upto date
-        results = get_leecom_precipitation()
+        results = downloaddata(mycursor,day1bfrst,todayst)
         #print(results)
 
-        for result in results:
+        eml_bdy=""
 
-            station_name = result[0]
-            lastupdated_datetime = result[1]
+        max_rf=max(results[:,2])
+        #print(max_rf)
+        number_of_steps=int(max_rf//50)
+        #print(number_of_steps)
 
-            print("%s station last updated at %s" % (station_name, lastupdated_datetime))
+        for step in range(1,number_of_steps+1):
+            header_chk=0
+            #print("step=",step)
+            for result in results:
+                #print("station="+result[0])
 
-
-            #check the difference of last updated time and the current time
-
-            gap_time = now_date_obj - lastupdated_datetime
-            gap_time_in_s = gap_time.total_seconds()
-            gap_time_min = divmod(gap_time_in_s, 60)[0]
-
-            print("Time duration between the last updated time and current time of %s : %s" % (station_name, gap_time_min))
-
-            print(gap_time)
-            print(gap_time_min)
-            print(station_name)
-
-            if not ((station_name == 'Leecom Test') | (station_name == 'Nawala') | (station_name == 'Ragama')):
-                if 0 < gap_time_min < 30:
-
-                    #check in the json whether the station has come online
-                    # if so, notify via an email that the station has come online
-                    # Also remove the station from the json
-
-                    if not os.stat('offlinestations.json').st_size == 0:
-                        with open('offlinestations.json', 'r') as openfile:
-                            json_object = json.load(openfile)
-
-
-                            for i in range(len(json_object)):
-                                if json_object[i]['StationName'] == station_name:
-                                #if any(objectjs['StationName'] == station_name for objectjs in json_object):
-
-                                    print("%s was removed from the json as it has started to respond at %s" % (
-                                        station_name, lastupdated_datetime))
-
-                                    send_email(msg=EMAIL_ALERT_TEMPLATE_2 % (station_name, lastupdated_datetime))
-
-                                    print("%s has started to report back" % station_name)
-                                    del json_object[i]
-                                    break
-
-
-                            open('offlinestations.json', "w").write(
-                                json.dumps(json_object, sort_keys=True, indent=4, separators=(',', ': '))
-                            )
-
-                    if station_name in stationname:
-                        for i, j in enumerate(stationname):
-                            if j == station_name:
-                                print(i)
-                                variables.pop(i)
-
-                        stationname.remove(station_name)
-
-
-                if gap_time_min >= 30:
-                    print(station_name)
-                    print(gap_time_min)
-                    #check if the json is empty
-
-                    if os.stat('offlinestations.json').st_size == 0:
-                        print('Json file is empty!')
-                        print("%s station has stopped responding since %s" % (station_name, lastupdated_datetime))
-
-                        stationname.append(station_name)
-                        variables.append("Precipitation")
-
-                        output = [{"StationName": sn, "Variable": var} for sn, var in zip(stationname, variables)]
-
-                        outputjs = json.dumps(output, indent=4)
-                        with open("offlinestations.json", "w") as outfile:
-                            outfile.write(outputjs)
-
-                        send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (station_name, lastupdated_datetime, station_name))
-
-                    #check if the station is already exist in the json
+                if (result[2]< 50*(step+1)) and (result[2]>50*(step)):
+                    if header_chk==1:
+                        eml_bdy=eml_bdy+result[0]+": "+str(result[2])+"mm\n"
                     else:
-                        with open('offlinestations.json', 'r') as openfile:
-                            json_object = json.load(openfile)
+                        eml_bdy=eml_bdy+"\nRainfall higher than "+str(50*step)+" mm \n"+result[0]+": "+str(result[2])+"mm\n"
+                        header_chk=1
+        print(eml_bdy)
 
-                            #if station does not exist in the json, insert to the json file
-                            #Also notify relevant parties via an email
+        if eml_bdy!="":
+            send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (eml_bdy))
+        
 
-                            if not any(objectjs['StationName'] == station_name for objectjs in json_object):
 
-                                print("%s station has stopped responding since %s" % (station_name, lastupdated_datetime))
 
-                                stationname.append(station_name)
-                                variables.append("Precipitation")
-
-                                output = [{"StationName": sn, "Variable": var} for sn, var in
-                                          zip(stationname, variables)]
-
-                                outputjs = json.dumps(output, indent=4)
-
-                                with open("offlinestations.json", "w") as outfile:
-                                    outfile.write(outputjs)
-
-                                send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (station_name, lastupdated_datetime, station_name))
-                            else:
-                                print("%s Station is already reported as a not working location" % station_name)
 
 
     except Exception as e:
