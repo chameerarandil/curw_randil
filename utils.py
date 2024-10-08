@@ -76,6 +76,8 @@ if __name__ == "__main__":
     print(todayst)
     day1bfr=now_date_obj-timedelta(days=1)
     day1bfrst=day1bfr.strftime('%Y-%m-%d %H:%M:%S')
+    day1hrbfr=now_date_obj-timedelta(hours=1)
+    day1hrbfrst=day1hrbfr.strftime('%Y-%m-%d %H:%M:%S')
     print(day1bfrst)
 
     print(now_date_obj)
@@ -89,6 +91,13 @@ if __name__ == "__main__":
         pr_rec = list(csv.reader(csvfile))
         pr_rec = np.array(pr_rec)
         pr_rec=np.vstack(pr_rec)
+
+    with open('previoushr.csv', 'r') as csvfile:
+        pr_rechr = csv.reader(csvfile)
+        pr_rechr = list(csv.reader(csvfile))
+        pr_rechr = np.array(pr_rechr)
+        pr_rechr=np.vstack(pr_rechr)
+
     try:
         stationname = []
         variables = []
@@ -100,14 +109,20 @@ if __name__ == "__main__":
 
         #check if the reported end date is upto date
         results = downloaddata(mycursor,day1bfrst,todayst)
+        resultshr = downloaddata(mycursor,day1hrbfrst,todayst)
         #print(results)
 
         eml_bdy=""
+        eml_bdyhr=""
 
         max_rf=max(results[:,2])
+        max_rfhr=max(resultshr[:,2])
         #print(max_rf)
         number_of_steps=int(max_rf//50)
+        number_of_stepshr=int(max_rfhr//50)
         #print(number_of_steps)
+
+        ### for 24 hr checks ###
 
         for step in range(1,number_of_steps+1):
             header_chk=0
@@ -130,12 +145,47 @@ if __name__ == "__main__":
                         header_chk=1
         #print(eml_bdy)
 
-        if eml_bdy!="":
-            send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (eml_bdy))
+        #if eml_bdy!="":
+        #   send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (eml_bdy))
 
         fp = open('previous.csv', 'w')
         myFile = csv.writer(fp)
         myFile.writerows(results)
+        fp.close()
+        
+### for 1 hr checks ###
+
+
+        for step in range(1,number_of_stepshr+1):
+            header_chk=0
+            #print("step=",step)
+            for result in resultshr:
+                #print("station="+result[0])
+                chck_prv_val=float(pr_rechr[pr_rechr[:,0]==result[0],2][0])
+                if int(chck_prv_val) < int(result[2]):
+                    trend="\u2191\n"
+                elif int(chck_prv_val) > int(result[2]):
+                    trend = "\u2193\n"
+                else:
+                    trend = "\u2194\n"
+                if (result[2]< 50*(step+1)) and (result[2]>50*(step)):
+                    if header_chk==1:
+                        
+                        eml_bdyhr=eml_bdyhr+result[0]+": "+str(result[2])+"mm "+ trend
+                    else:
+                        eml_bdyhr=eml_bdyhr+"\nRainfall higher than "+str(50*step)+" mm \n"+result[0]+": "+str(result[2])+"mm"+trend
+                        header_chk=1
+        #print(eml_bdy)
+
+        if eml_bdy!="" and eml_bdyhr!="":
+            send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (eml_bdy+"\n\n\nExcessive rainfalls for past 1 hour are as follows.\n"+eml_bdyhr))
+        elif eml_bdy!="":
+            send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (eml_bdy))
+
+
+        fp = open('previoushr.csv', 'w')
+        myFile = csv.writer(fp)
+        myFile.writerows(resultshr)
         fp.close()
         
 
