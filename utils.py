@@ -8,6 +8,7 @@ import pytz
 from datetime import datetime
 from datetime import timedelta
 import numpy as np
+import csv
 
 from config_cred import DATABASE_CONFIG
 from config_cred import EMAIL_ALERT_TEMPLATE_1, EMAIL_ALERT_TEMPLATE_2
@@ -83,6 +84,11 @@ if __name__ == "__main__":
 
     print("Successfully connected to %s database at curw_iot_platform cloud (%s)." % (MYSQL_DB, MYSQL_HOST))
 
+    with open('previous.csv', 'r') as csvfile:
+        pr_rec = csv.reader(csvfile)
+        pr_rec = list(csv.reader(csvfile))
+        pr_rec = np.array(pr_rec)
+        pr_rec=np.vstack(pr_rec)
     try:
         stationname = []
         variables = []
@@ -108,17 +114,29 @@ if __name__ == "__main__":
             #print("step=",step)
             for result in results:
                 #print("station="+result[0])
-
+                chck_prv_val=float(pr_rec[pr_rec[:,0]==result[0],2][0])
+                if int(chck_prv_val) < int(result[2]):
+                    trend="\u2193\n"
+                elif int(chck_prv_val) > int(result[2]):
+                    trend = "\u2191\n"
+                else:
+                    trend = "\u2194\n"
                 if (result[2]< 50*(step+1)) and (result[2]>50*(step)):
                     if header_chk==1:
-                        eml_bdy=eml_bdy+result[0]+": "+str(result[2])+"mm\n"
+                        
+                        eml_bdy=eml_bdy+result[0]+": "+str(result[2])+"mm "+ trend
                     else:
-                        eml_bdy=eml_bdy+"\nRainfall higher than "+str(50*step)+" mm \n"+result[0]+": "+str(result[2])+"mm\n"
+                        eml_bdy=eml_bdy+"\nRainfall higher than "+str(50*step)+" mm \n"+result[0]+": "+str(result[2])+"mm"+trend
                         header_chk=1
-        print(eml_bdy)
+        #print(eml_bdy)
 
         if eml_bdy!="":
             send_email(msg=EMAIL_ALERT_TEMPLATE_1 % (eml_bdy))
+
+        fp = open('previous.csv', 'w')
+        myFile = csv.writer(fp)
+        myFile.writerows(results)
+        fp.close()
         
 
 
