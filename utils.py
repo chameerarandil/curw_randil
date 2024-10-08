@@ -48,7 +48,7 @@ def downloaddata(cursordb,strtime,endtime):
         print("No data returned")
     else:
         rows = []
-        rawfetch=mycursor.fetchall()
+        #rawfetch=mycursor.fetchall()
         for row in mycursor.stored_results():
         #print(row.fetchall())
             
@@ -116,9 +116,9 @@ if __name__ == "__main__":
                 #print("station="+result[0])
                 chck_prv_val=float(pr_rec[pr_rec[:,0]==result[0],2][0])
                 if int(chck_prv_val) < int(result[2]):
-                    trend="\u2193\n"
+                    trend="\u2191\n"
                 elif int(chck_prv_val) > int(result[2]):
-                    trend = "\u2191\n"
+                    trend = "\u2193\n"
                 else:
                     trend = "\u2194\n"
                 if (result[2]< 50*(step+1)) and (result[2]>50*(step)):
